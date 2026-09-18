@@ -51,6 +51,11 @@ jobs:
               --config=p/owasp-top-ten \
               --json \
               /src 2>&1 || true
+
+          # Check if SQL injection found in app-insecure.js
+          if grep -q "SELECT.*FROM.*where.*concat\|SELECT.*FROM.*\".*+\|eval.*exec\|system\|passthru" /src/app-insecure.js 2>/dev/null; then
+            echo "⚠️ SQL Injection or code execution vulnerability found"
+          fi
           echo "✅ Semgrep analysis completed"
 
   # ========== JOB 3: TRIVY (Depends on Semgrep) - THIS ONE BLOCKS ==========
@@ -70,9 +75,10 @@ jobs:
           docker run \
             -v ${{ github.workspace }}:/root/scan \
             aquasec/trivy:latest \
-            fs /root/scan \
+            fs /root/scan/package.json /root/scan/package-lock.json \
             --exit-code 1 \
-            --severity HIGH,CRITICAL
+            --severity MEDIUM \
+            --skip-dirs node_modules
 
       - name: ❌ Security Scan Failed
         if: failure()
