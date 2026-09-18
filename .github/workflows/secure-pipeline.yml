@@ -66,13 +66,13 @@ jobs:
       - name: 🔐 Scan dependencies - EXIT CODE 1 (BLOCKS)
         id: trivy
         run: |
-          echo "📦 Scanning dependencies for critical CVEs..."
+          echo "📦 Scanning dependencies for HIGH/CRITICAL CVEs..."
           docker run \
             -v ${{ github.workspace }}:/root/scan \
             aquasec/trivy:latest \
             fs /root/scan \
             --exit-code 1 \
-            --severity CRITICAL
+            --severity HIGH,CRITICAL
 
       - name: ❌ Security Scan Failed
         if: failure()
