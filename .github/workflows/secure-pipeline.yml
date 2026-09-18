@@ -83,12 +83,12 @@ jobs:
           echo "Fix vulnerabilities and try again"
           exit 1
 
-  # ========== FINAL STATUS ==========
+  # ========== FINAL STATUS (Only if all pass) ==========
   pipeline-status:
     runs-on: ubuntu-latest
     needs: [gitleaks-scan, semgrep-scan, trivy-scan]
-    if: always()
-    name: 📊 Pipeline Status
+    if: success()
+    name: ✅ All Checks Passed
 
     steps:
       - name: 📋 Summary
