@@ -1,0 +1,87 @@
+name: ⚠️ INSECURE Pipeline (Detects but Doesn't Block)
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main, develop]
+
+jobs:
+  insecure-security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # ========== GITLEAKS - WARNING ONLY ==========
+      - name: 🔐 Gitleaks - Detect Secrets (WARNING)
+        continue-on-error: true  # ⚠️ INSECURE: Doesn't block!
+        run: |
+          docker run \
+            -v ${{ github.workspace }}:/repo \
+            zricethezav/gitleaks:latest \
+            detect --source /repo --verbose || true
+
+          echo "⚠️ WARNING: Gitleaks completed (but build continues anyway!)"
+
+      # ========== SEMGREP - WARNING ONLY ==========
+      - name: 🔍 Semgrep - SAST Analysis (WARNING)
+        continue-on-error: true  # ⚠️ INSECURE: Doesn't block!
+        run: |
+          docker run \
+            -v ${{ github.workspace }}:/src \
+            returntocorp/semgrep \
+            semgrep \
+              --config=p/owasp-top-ten \
+              --json \
+              --output=/tmp/semgrep.json \
+              /src || true
+
+          VULN_COUNT=$(jq '.results | length' /tmp/semgrep.json 2>/dev/null || echo "0")
+          echo "⚠️ WARNING: Found $VULN_COUNT potential issues (but build continues anyway!)"
+
+      # ========== TRIVY - WARNING ONLY ==========
+      - name: 📦 Trivy - Dependency Scan (WARNING)
+        continue-on-error: true  # ⚠️ INSECURE: Doesn't block!
+        run: |
+          docker run \
+            -v ${{ github.workspace }}:/root/scan \
+            aquasec/trivy:latest \
+            fs /root/scan \
+            --severity HIGH,CRITICAL || true
+
+          echo "⚠️ WARNING: Trivy completed (but build continues anyway!)"
+
+      # ========== BUILD - CONTINUES DESPITE VULNERABILITIES ==========
+      - name: ✅ Build Application (INSECURE)
+        run: |
+          echo "🚀 Building application..."
+          echo "⚠️ WARNING: Building with known vulnerabilities!"
+          npm install --prefer-offline --no-audit || true
+          echo "✅ Build completed (vulnerabilities ignored!)"
+
+      # ========== UPLOAD ARTIFACTS ==========
+      - name: 📤 Upload Results as Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: insecure-scan-results
+          path: /tmp/semgrep.json
+          retention-days: 7
+
+      # ========== INSECURE: Job always succeeds ==========
+      - name: ✅ Job Completed (with warnings)
+        if: always()
+        run: |
+          echo "🔴 INSECURE PIPELINE COMPLETED"
+          echo ""
+          echo "❌ Issues with this pipeline:"
+          echo "  - Detects vulnerabilities but doesn't block"
+          echo "  - Vulnerable code reaches production"
+          echo "  - No protection against security issues"
+          echo "  - Developers can ignore warnings"
+          echo ""
+          echo "⚠️ Status: VULNERABLE CODE DEPLOYED"
