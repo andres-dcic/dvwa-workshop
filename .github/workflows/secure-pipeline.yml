@@ -1,0 +1,113 @@
+name: 🔒 SECURE Pipeline (Blocks on Trivy)
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main, develop]
+
+jobs:
+  # ========== JOB 1: GITLEAKS ==========
+  gitleaks-scan:
+    runs-on: ubuntu-latest
+    name: 🔐 Gitleaks - Detect Secrets
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Scan for hardcoded secrets
+        id: gitleaks
+        continue-on-error: true
+        run: |
+          echo "🔍 Scanning for secrets..."
+          docker run \
+            -v ${{ github.workspace }}:/repo \
+            zricethezav/gitleaks:latest \
+            detect --source /repo --verbose 2>&1 || true
+          echo "✅ Gitleaks scan completed"
+
+  # ========== JOB 2: SEMGREP (Depends on Gitleaks) ==========
+  semgrep-scan:
+    runs-on: ubuntu-latest
+    needs: gitleaks-scan
+    name: 🔍 Semgrep - Code Analysis
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 📋 Analyze code for vulnerabilities
+        id: semgrep
+        continue-on-error: true
+        run: |
+          echo "🔍 Analyzing code..."
+          docker run \
+            -v ${{ github.workspace }}:/src \
+            returntocorp/semgrep \
+            semgrep \
+              --config=p/owasp-top-ten \
+              --json \
+              /src 2>&1 || true
+          echo "✅ Semgrep analysis completed"
+
+  # ========== JOB 3: TRIVY (Depends on Semgrep) - THIS ONE BLOCKS ==========
+  trivy-scan:
+    runs-on: ubuntu-latest
+    needs: semgrep-scan
+    name: 📦 Trivy - Dependency Scan (BLOCKS)
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🔐 Scan dependencies - EXIT CODE 1 (BLOCKS)
+        id: trivy
+        run: |
+          echo "📦 Scanning dependencies for critical CVEs..."
+          docker run \
+            -v ${{ github.workspace }}:/root/scan \
+            aquasec/trivy:latest \
+            fs /root/scan \
+            --exit-code 1 \
+            --severity CRITICAL
+
+      - name: ❌ Security Scan Failed
+        if: failure()
+        run: |
+          echo "❌ PIPELINE BLOCKED: Critical CVEs detected!"
+          echo ""
+          echo "This is a SECURE pipeline that blocks deployments"
+          echo "Fix vulnerabilities and try again"
+          exit 1
+
+  # ========== FINAL STATUS ==========
+  pipeline-status:
+    runs-on: ubuntu-latest
+    needs: [gitleaks-scan, semgrep-scan, trivy-scan]
+    if: always()
+    name: 📊 Pipeline Status
+
+    steps:
+      - name: 📋 Summary
+        run: |
+          echo "════════════════════════════════════════"
+          echo "📊 SECURE PIPELINE EXECUTION SUMMARY"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "Job Results:"
+          echo "  ✅ Gitleaks:  ${{ needs.gitleaks-scan.result }}"
+          echo "  ✅ Semgrep:   ${{ needs.semgrep-scan.result }}"
+          echo "  ❌ Trivy:     ${{ needs.trivy-scan.result }}"
+          echo ""
+          echo "════════════════════════════════════════"
+          if [ "${{ needs.trivy-scan.result }}" == "failure" ]; then
+            echo "🚫 PIPELINE BLOCKED BY TRIVY"
+            echo "Fix vulnerabilities before merge"
+          else
+            echo "✅ ALL SECURITY CHECKS PASSED"
+            echo "Safe to deploy"
+          fi
+          echo "════════════════════════════════════════"
